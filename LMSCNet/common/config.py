@@ -13,7 +13,7 @@ class CFG:
     '''
 
     # Initializing dict...
-    self._dict = {}
+    self.dict_ = {}
     return
 
   def from_config_yaml(self, config_path):
@@ -23,11 +23,11 @@ class CFG:
     '''
 
     # Reading config file
-    self._dict = yaml.load(open(config_path, 'r'), Loader=yaml.FullLoader)
+    self.dict_ = yaml.load(open(config_path, 'r'), Loader=yaml.FullLoader)
 
-    self._dict['STATUS']['CONFIG'] = config_path
+    self.dict_['STATUS']['CONFIG'] = config_path
 
-    if not 'OUTPUT_PATH' in self._dict['OUTPUT'].keys():
+    if not 'OUTPUT_PATH' in self.dict_['OUTPUT'].keys():
       self.set_output_filename()
       self.init_stats()
       self.update_config()
@@ -41,7 +41,7 @@ class CFG:
     '''
 
     # Reading config file
-    self._dict = config_dict
+    self.dict_ = config_dict
     return
 
   def set_output_filename(self):
@@ -49,10 +49,10 @@ class CFG:
     Set output path in the form Model_Dataset_DDYY_HHMMSS
     '''
     datetime = get_date_sting()
-    model = self._dict['MODEL']['TYPE']
-    dataset = self._dict['DATASET']['TYPE']
-    OUT_PATH = os.path.join(self._dict['OUTPUT']['OUT_ROOT'], model + '_' + dataset + '_' + datetime)
-    self._dict['OUTPUT']['OUTPUT_PATH'] = OUT_PATH
+    model = self.dict_['MODEL']['TYPE']
+    dataset = self.dict_['DATASET']['TYPE']
+    OUT_PATH = os.path.join(self.dict_['OUTPUT']['OUT_ROOT'], model + '_' + dataset + '_' + datetime)
+    self.dict_['OUTPUT']['OUTPUT_PATH'] = OUT_PATH
     return
 
   def update_config(self, resume=False):
@@ -61,36 +61,36 @@ class CFG:
     '''
     if resume:
       self.set_resume()
-    yaml.dump(self._dict, open(self._dict['STATUS']['CONFIG'], 'w'))
+    yaml.dump(self.dict_, open(self.dict_['STATUS']['CONFIG'], 'w'))
     return
 
   def init_stats(self):
     '''
     Initialize training stats (i.e. epoch mean time, best loss, best metrics)
     '''
-    self._dict['OUTPUT']['BEST_LOSS'] = 999999999999
-    self._dict['OUTPUT']['BEST_METRIC'] = -999999999999
-    self._dict['STATUS']['LAST'] = ''
+    self.dict_['OUTPUT']['BEST_LOSS'] = 999999999999
+    self.dict_['OUTPUT']['BEST_METRIC'] = -999999999999
+    self.dict_['STATUS']['LAST'] = ''
     return
 
   def set_resume(self):
     '''
     Update resume status dict file
     '''
-    if not self._dict['STATUS']['RESUME']:
-      self._dict['STATUS']['RESUME'] = True
+    if not self.dict_['STATUS']['RESUME']:
+      self.dict_['STATUS']['RESUME'] = True
     return
 
   def finish_config(self):
-    self.move_config(os.path.join(self._dict['OUTPUT']['OUTPUT_PATH'], 'config.yaml'))
+    self.move_config(os.path.join(self.dict_['OUTPUT']['OUTPUT_PATH'], 'config.yaml'))
     return
 
   def move_config(self, path):
     # Remove from original path
-    os.remove(self._dict['STATUS']['CONFIG'])
+    os.remove(self.dict_['STATUS']['CONFIG'])
     # Change ['STATUS']['CONFIG'] to new path
-    self._dict['STATUS']['CONFIG'] = path
+    self.dict_['STATUS']['CONFIG'] = path
     # Save to routine output folder
-    yaml.dump(self._dict, open(path, 'w'))
+    yaml.dump(self.dict_, open(path, 'w'))
 
     return

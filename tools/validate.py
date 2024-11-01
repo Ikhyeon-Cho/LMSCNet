@@ -66,7 +66,7 @@ def validate(model, dset, _cfg, logger, metrics):
       # Updating batch losses to then get mean for epoch loss
       metrics.losses_track.update_validaiton_losses(loss)
 
-      if (t + 1) % _cfg._dict['VAL']['SUMMARY_PERIOD'] == 0:
+      if (t + 1) % _cfg.dict_['VAL']['SUMMARY_PERIOD'] == 0:
         loss_print = '=> Iteration [{}/{}], Train Losses: '.format(t+1, len(dset))
         for key in loss.keys(): loss_print += '{} = {:.6f},  '.format(key, loss[key])
         logger.info(loss_print[:-3])
@@ -118,7 +118,7 @@ def main():
   _cfg = CFG()
   _cfg.from_dict(config_dict)
   # Setting the logger to print statements and also save them into logs file
-  logger = get_logger(_cfg._dict['OUTPUT']['OUTPUT_PATH'], 'logs_val.log')
+  logger = get_logger(_cfg.dict_['OUTPUT']['OUTPUT_PATH'], 'logs_val.log')
 
   logger.info('============ Validation weights: "%s" ============\n' % weights_f)
   dataset = get_dataset(_cfg)

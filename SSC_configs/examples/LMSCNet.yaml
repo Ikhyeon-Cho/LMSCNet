@@ -7,7 +7,7 @@ DATASET:
     3D_LABEL: true
     3D_OCCLUDED: true
     3D_OCCUPANCY: true
-  ROOT_DIR: /datasets_local/datasets_lroldaoj/semantic_kitti_v1.0/
+  ROOT_DIR: /data/semanticKITTI
   TYPE: SemanticKITTI
 MODEL:
   TYPE: LMSCNet
@@ -18,13 +18,18 @@ OPTIMIZER:
   MOMENTUM: NA
   TYPE: Adam
   WEIGHT_DECAY: NA
-OUTPUT:
-  OUT_ROOT: ../SSC_out/
 SCHEDULER:
+  TYPE: power_iteration
   FREQUENCY: epoch
   LR_POWER: 0.98
-  TYPE: power_iteration
+OUTPUT:
+  BEST_LOSS: 999999999999
+  BEST_METRIC: -999999999999
+  OUTPUT_PATH: ../SSC_out/LMSCNet_SemanticKITTI_1101_071003
+  OUT_ROOT: ../SSC_out/
 STATUS:
+  CONFIG: SSC_configs/examples/LMSCNet.yaml
+  LAST: ''
   RESUME: false
 TRAIN:
   BATCH_SIZE: 4
