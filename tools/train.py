@@ -27,7 +27,7 @@ def parse_args():
     parser.add_argument(
         '--cfg',
         dest='config_file',
-        default='',
+        default='SSC_configs/examples/LMSCNet.yaml',
         metavar='FILE',
         help='path to config file',
         type=str,
@@ -35,7 +35,7 @@ def parse_args():
     parser.add_argument(
         '--dset_root',
         dest='dataset_root',
-        default=None,
+        default='/data/semanticKITTI',
         metavar='DATASET',
         help='path to dataset root folder',
         type=str,
@@ -356,6 +356,8 @@ def main():
         scheduler,
         resume,
         _cfg.dict_['STATUS']['LAST'])
+
+    print(model)
 
     # Train
     best_record = train(model,

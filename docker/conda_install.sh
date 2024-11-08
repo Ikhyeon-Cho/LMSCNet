@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 # Install additional packages in the active conda environment
