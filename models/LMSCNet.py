@@ -75,10 +75,10 @@ class LMSCNet(nn.Module):
         self.voxel_dims = voxel_dims  # [256, 256, 32]
 
         # Encoder modules
-        CH_BASE = self.voxel_dims[2]
-        CH_1_2 = int(CH_BASE*1.5)
-        CH_1_4 = int(CH_BASE*2)
-        CH_1_8 = int(CH_BASE*2.5)
+        CH_BASE = self.voxel_dims[2]  # 32
+        CH_1_2 = int(CH_BASE*1.5)     # 48
+        CH_1_4 = int(CH_BASE*2)       # 64
+        CH_1_8 = int(CH_BASE*2.5)     # 80
 
         self.encoder_1_1 = nn.Sequential(  # CH_BASE: 32
             Conv2DRelu(CH_BASE, CH_BASE, kernel_size=3, padding=1, stride=1),
@@ -104,11 +104,11 @@ class LMSCNet(nn.Module):
         CH_OUT_1_4 = int(CH_BASE/4)  # 8
         CH_OUT_1_2 = int(CH_BASE/2)  # 16
 
-        self.conv_out_1_8 = nn.Conv2d(CH_1_8, CH_OUT_1_8,
+        self.conv_out_1_8 = nn.Conv2d(CH_1_8, CH_OUT_1_8,  # 80 -> 4
                                       kernel_size=3, padding=1, stride=1)
-        self.conv_out_1_4 = nn.Conv2d(CH_1_4, CH_OUT_1_4,
+        self.conv_out_1_4 = nn.Conv2d(CH_1_4, CH_OUT_1_4,  # 64 -> 8
                                       kernel_size=3, padding=1, stride=1)
-        self.conv_out_1_2 = nn.Conv2d(CH_1_2, CH_OUT_1_2,
+        self.conv_out_1_2 = nn.Conv2d(CH_1_2, CH_OUT_1_2,  # 48 -> 16
                                       kernel_size=3, padding=1, stride=1)
 
         dilation_rates = [1, 2, 3]
@@ -122,32 +122,32 @@ class LMSCNet(nn.Module):
             1, 8, num_classes, dilation_rates)
 
         # Upsampling modules
-        self.upconv_1_8 = nn.ConvTranspose2d(CH_OUT_1_8, CH_OUT_1_8,
+        self.upconv_1_8 = nn.ConvTranspose2d(CH_OUT_1_8, CH_OUT_1_8,  # spatial: 32 -> 64
                                              kernel_size=6, padding=2, stride=2)
 
-        self.upconv_1_4 = nn.ConvTranspose2d(CH_OUT_1_4, CH_OUT_1_4,
+        self.upconv_1_4 = nn.ConvTranspose2d(CH_OUT_1_4, CH_OUT_1_4,  # spatial: 64 -> 128
                                              kernel_size=6, padding=2, stride=2)
 
-        self.upconv_1_2 = nn.ConvTranspose2d(CH_OUT_1_2, CH_OUT_1_2,
+        self.upconv_1_2 = nn.ConvTranspose2d(CH_OUT_1_2, CH_OUT_1_2,  # spatial: 128 -> 256
                                              kernel_size=6, padding=2, stride=2)
 
-        self.upconv_1_8_to_1_2 = nn.ConvTranspose2d(CH_OUT_1_8, CH_OUT_1_8,
+        self.upconv_1_8_to_1_2 = nn.ConvTranspose2d(CH_OUT_1_8, CH_OUT_1_8,  # spatial: 32 -> 128
                                                     kernel_size=4, padding=0, stride=4)
 
-        self.upconv_1_8_to_1_1 = nn.ConvTranspose2d(CH_OUT_1_8, CH_OUT_1_8,
+        self.upconv_1_8_to_1_1 = nn.ConvTranspose2d(CH_OUT_1_8, CH_OUT_1_8,  # spatial: 32 -> 256
                                                     kernel_size=8, padding=0, stride=8)
 
-        self.upconv_1_4_to_1_1 = nn.ConvTranspose2d(CH_OUT_1_4, CH_OUT_1_4,
+        self.upconv_1_4_to_1_1 = nn.ConvTranspose2d(CH_OUT_1_4, CH_OUT_1_4,  # spatial: 64 -> 256
                                                     kernel_size=4, padding=0, stride=4)
 
         # Decoder modules
-        self.conv_1_4 = nn.Conv2d((CH_OUT_1_8 + CH_1_4), CH_1_4,
+        self.conv_1_4 = nn.Conv2d((CH_OUT_1_8 + CH_1_4), CH_1_4,  # spatial: (32+64) -> 64 # why reduced to encoder channels?
                                   kernel_size=3, padding=1, stride=1)
 
-        self.conv_1_2 = nn.Conv2d((CH_OUT_1_8 + CH_OUT_1_4 + CH_1_2), CH_1_2,
+        self.conv_1_2 = nn.Conv2d((CH_OUT_1_8 + CH_OUT_1_4 + CH_1_2), CH_1_2,  # spatial: (32+8+48) -> 48
                                   kernel_size=3, padding=1, stride=1)
 
-        self.conv_1_1 = nn.Conv2d((CH_OUT_1_8 + CH_OUT_1_4 + CH_OUT_1_2 + CH_BASE), CH_BASE,
+        self.conv_1_1 = nn.Conv2d((CH_OUT_1_8 + CH_OUT_1_4 + CH_OUT_1_2 + CH_BASE), CH_BASE,  # spatial: (4+8+16+32) -> 32
                                   kernel_size=3, padding=1, stride=1)
 
     def forward(self, input_tensor):
@@ -240,7 +240,7 @@ if __name__ == '__main__':
 
     # conver to torch tenrosr
     voxel_occ = torch.from_numpy(voxel_occ).to(
-        torch.float32).permute(2, 0, 1).unsqueeze(0)  # pytorch order
+        torch.float32).permute(2, 0, 1).unsqueeze(0)  # pytorch order TODO: make dataset preprocesser
 
     # Model
     model = LMSCNet(num_classes=20, voxel_dims=[256, 256, 32])
