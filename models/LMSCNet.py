@@ -211,19 +211,19 @@ class LMSCNet(nn.Module):
 
         if phase == 'train':
             return {
-                'pred_semantic_1_1': seg_output_1_1.permute(0, 1, 3, 4, 2).squeeze(),
-                'pred_semantic_1_2': seg_output_1_2.permute(0, 1, 3, 4, 2).squeeze(),
-                'pred_semantic_1_4': seg_output_1_4.permute(0, 1, 3, 4, 2).squeeze(),
-                'pred_semantic_1_8': seg_output_1_8.permute(0, 1, 3, 4, 2).squeeze()
+                'pred_semantic_1_1': seg_output_1_1.permute(0, 1, 3, 4, 2),
+                'pred_semantic_1_2': seg_output_1_2.permute(0, 1, 3, 4, 2),
+                'pred_semantic_1_4': seg_output_1_4.permute(0, 1, 3, 4, 2),
+                'pred_semantic_1_8': seg_output_1_8.permute(0, 1, 3, 4, 2)
             }
         else:
-            return seg_output_1_1.permute(0, 1, 3, 4, 2).squeeze()
+            return seg_output_1_1.permute(0, 1, 3, 4, 2)
 
 
 class LMSCNetLoss:
     def __init__(self, config: dict):
         self.num_classes = 20
-        self.CE_Loss = nn.CrossEntropyLoss().to(torch.device('cpu'))
+        self.CE_Loss = nn.CrossEntropyLoss()
 
     def CE_Loss_1_1(self, preds: dict, targets: torch.Tensor):
         return self.CE_Loss(preds['pred_semantic_1_1'], targets)

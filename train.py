@@ -43,11 +43,11 @@ def main(args):
         'train': DataLoader(train_dataset,
                             batch_size=TRAIN_CFG['batch_size'],
                             shuffle=True,
-                            num_workers=1),
+                            num_workers=2),
         'valid': DataLoader(val_dataset,
                             batch_size=TRAIN_CFG['batch_size'],
                             shuffle=False,
-                            num_workers=1),
+                            num_workers=2),
     }
 
     # 4. Load model

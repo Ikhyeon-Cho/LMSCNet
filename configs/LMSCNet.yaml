@@ -32,7 +32,7 @@ STATUS:
   resume: false
 TRAIN:
   epochs: 80
-  batch_size: 4
+  batch_size: 1
   checkpoint_period: 15
   summary_period: 50
   # Optimizer
@@ -44,7 +44,7 @@ TRAIN:
   SGD_weight_decay: NA
   # Scheduler
   scheduler: # [None, constant, power_iteration] Leave empty for no scheduler
-
+  log_dir: experiments
 VAL:
   batch_size: 8
   summary_period: 20
