@@ -1,3 +1,9 @@
+"""
+Author: Ikhyeon Cho
+File: config_tools.py
+Date: 2024/11/2 18:50
+"""
+
 import os
 import yaml
 
@@ -12,4 +18,6 @@ if __name__ == "__main__":
 
     # Example usage
     train_cfg = load_yaml("configs/LMSCNet.yaml")
+    print("Testing config loader:")
+    print("-"*10)
     print(train_cfg)

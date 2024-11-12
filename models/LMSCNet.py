@@ -1,7 +1,17 @@
+"""
+Author: Ikhyeon Cho
+Link: https://github.com/Ikhyeon-Cho
+File: LMSCNet.py
+Date: 2024/11/2 18:50
+
+Re-implementation of LMSCNet.
+Reference: https://github.com/astra-vision/LMSCNet
+"""
+
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-from nn_modules import Conv2DRelu
+from models.nn_modules import Conv2DRelu
 
 
 class SegmentationHead3d(nn.Module):
@@ -35,8 +45,8 @@ class SegmentationHead3d(nn.Module):
             self.aspp_bn2.append(nn.BatchNorm3d(planes_hidden))
 
         # Final classification layer
-        self.vox_classifier = nn.Conv3d(planes_hidden, num_classes,
-                                        kernel_size=3, padding=1, stride=1)  # why kernel size is 3? not conv 1x1?
+        self.voxel_classifier = nn.Conv3d(planes_hidden, num_classes,
+                                          kernel_size=3, padding=1, stride=1)  # why kernel size is 3? not conv 1x1?
 
     def forward(self, completion_3d):
 
@@ -58,21 +68,21 @@ class SegmentationHead3d(nn.Module):
 
         # Skip connection (residual) and final 3D Convolution
         completion_3d = self.relu(aspp_out + completion_3d)
-        seg_completion_3d = self.vox_classifier(completion_3d)
+        seg_completion_3d = self.voxel_classifier(completion_3d)
 
         return seg_completion_3d
 
 
 class LMSCNet(nn.Module):
 
-    def __init__(self, num_classes, voxel_dims):
+    def __init__(self, num_classes, input_dims):
         '''
         LMSCNet architecture.
         '''
         super().__init__()
 
         self.num_classes = num_classes
-        self.voxel_dims = voxel_dims  # [256, 256, 32]
+        self.voxel_dims = input_dims  # [256, 256, 32]
 
         # Encoder modules
         CH_BASE = self.voxel_dims[2]  # 32
@@ -150,9 +160,13 @@ class LMSCNet(nn.Module):
         self.conv_1_1 = nn.Conv2d((CH_OUT_1_8 + CH_OUT_1_4 + CH_OUT_1_2 + CH_BASE), CH_BASE,  # spatial: (4+8+16+32) -> 32
                                   kernel_size=3, padding=1, stride=1)
 
-    def forward(self, input_tensor):
-        # Convert input to float32 and permute dimensions
+    def forward(self, input_tensor, phase='train'):
+
         features = input_tensor.to(torch.float32)
+        # Check if the input tensor has only 3 dimensions (no batch dimension)
+        if len(features.shape) == 3:
+            features = features.unsqueeze(0)
+        features = features.permute(0, 3, 1, 2)  # pytorch channel order
 
         # Encoder pathway
         skip_1_1 = self.encoder_1_1(features)  # [bs, 32, 256, 256]
@@ -195,55 +209,47 @@ class LMSCNet(nn.Module):
         output_1_1 = F.relu(self.conv_1_1(skip_conn_1_1))  # [bs, 32, 256, 256]
         seg_output_1_1 = self.seg_head_1_1(output_1_1)     # [bs,20,32,256,256]
 
-        preds = {
-            'pred_semantic_1_1': seg_output_1_1,
-            'pred_semantic_1_2': seg_output_1_2,
-            'pred_semantic_1_4': seg_output_1_4,
-            'pred_semantic_1_8': seg_output_1_8
-        }
-
-        return preds
-
-    def compute_loss(self, predictions, target_data):
-        '''
-        :param: predictions: the predicted tensor, must be [BS, C, H, W, D]
-        '''
-
-        target = target_data.to(torch.float32).permute(0, 1, 3, 2)
-        device = target.device
-
-        print(device)
-        print(target.dtype)
-        print(predictions['pred_semantic_1_1'].dtype)
-        print(predictions['pred_semantic_1_1'].device)
-        print(predictions['pred_semantic_1_1'].shape)
-        print(target.shape)
-        criterion = nn.CrossEntropyLoss(ignore_index=255).to(device=device)
-
-        loss_1_1 = criterion(
-            predictions['pred_semantic_1_1'], target.long())
-
-        losses = {'total': loss_1_1, 'semantic_1_1': loss_1_1}
-
-        return losses
+        if phase == 'train':
+            return {
+                'pred_semantic_1_1': seg_output_1_1.permute(0, 1, 3, 4, 2).squeeze(),
+                'pred_semantic_1_2': seg_output_1_2.permute(0, 1, 3, 4, 2).squeeze(),
+                'pred_semantic_1_4': seg_output_1_4.permute(0, 1, 3, 4, 2).squeeze(),
+                'pred_semantic_1_8': seg_output_1_8.permute(0, 1, 3, 4, 2).squeeze()
+            }
+        else:
+            return seg_output_1_1.permute(0, 1, 3, 4, 2).squeeze()
 
 
-if __name__ == '__main__':
+class LMSCNetLoss:
+    def __init__(self, config: dict):
+        self.num_classes = 20
+        self.CE_Loss = nn.CrossEntropyLoss().to(torch.device('cpu'))
 
-    # Dataset
-    from semantic_kitti_pytorch.data.datasets import SemanticKITTI_Completion
-    dataset = SemanticKITTI_Completion(
-        "/data/semanticKITTI/dataset/", phase='train')
-    sample_dict = dataset[0]
+    def CE_Loss_1_1(self, preds: dict, targets: torch.Tensor):
+        return self.CE_Loss(preds['pred_semantic_1_1'], targets)
 
-    voxel_occ = sample_dict['occupancy']
+    def CE_Loss_1_2(self, preds: dict, targets: torch.Tensor):
+        return self.CE_Loss(preds['pred_semantic_1_2'], targets)
 
-    # conver to torch tenrosr
-    voxel_occ = torch.from_numpy(voxel_occ).to(
-        torch.float32).permute(2, 0, 1).unsqueeze(0)  # pytorch order TODO: make dataset preprocesser
+    def CE_Loss_1_4(self, preds: dict, targets: torch.Tensor):
+        return self.CE_Loss(preds['pred_semantic_1_4'], targets)
 
-    # Model
-    model = LMSCNet(num_classes=20, voxel_dims=[256, 256, 32])
-    pred = model(voxel_occ)
-    print(pred)
-    print(model)
+    def CE_Loss_1_8(self, preds: dict, targets: torch.Tensor):
+        return self.CE_Loss(preds['pred_semantic_1_8'], targets)
+
+
+# if __name__ == '__main__':
+
+#     # Dataset
+#     from semantic_kitti_pytorch.data.datasets import SemanticKITTI_Completion
+#     dataset = SemanticKITTI_Completion(
+#         "/data/semanticKITTI/dataset/", phase='train')
+#     sample_dict = dataset[0]
+
+#     voxel_occ = sample_dict['occupancy']
+
+#     # Model
+#     model = LMSCNet(num_classes=20, input_dims=[256, 256, 32])
+#     pred_1_1 = model(voxel_occ)
+#     print(voxel_occ.shape)
+#     print(pred_1_1.shape)

@@ -12,14 +12,13 @@ DATASET:
 MODEL:
   type: LMSCNet
 OPTIMIZER:
-  base_lr: 0.001
-  beta1: 0.9 # Adam beta1
-  beta2: 0.999 # Adam beta2
-  momentum: NA
-  type: Adam # optim
-  weight_decay: NA
-SCHEDULER:
-  type: power_iteration
+  type: Adam # [Adam, SGD]
+  learning_rate: 0.001
+  Adam_beta1: 0.9 # Adam beta1
+  Adam_beta2: 0.999 # Adam beta2
+  SGD_momentum: NA
+  SGD_weight_decay: NA
+  scheduler: None # [None, constant, power_iteration]
   frequency: epoch
   lr_power: 0.98
 OUTPUT:
@@ -32,9 +31,9 @@ STATUS:
   last: ""
   resume: false
 TRAIN:
+  epochs: 80
   batch_size: 4
   checkpoint_period: 15
-  epochs: 80
   summary_period: 50
   # Optimizer
   optimizer: Adam # [Adam, SGD]

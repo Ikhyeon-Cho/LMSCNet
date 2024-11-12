@@ -1,23 +1,33 @@
+"""
+Author: Ikhyeon Cho
+Link: https://github.com/Ikhyeon-Cho
+File: train.py
+Date: 2024/11/2 18:50
+
+Re-implementation of LMSCNet.
+Reference: https://github.com/astra-vision/LMSCNet
+"""
+
 import argparse
-import torch
 from torch.utils.data import DataLoader
-from models.LMSCNet import LMSCNet
-from data.dataset import LMSCNetDataLoader
+from data.dataloader import LMSCNetDataset, VOXEL_DIMS
+from models.LMSCNet import LMSCNet, LMSCNetLoss
 from train.trainer import LMSCNetTrainer
-from utils.data import seed
-from utils import config_tools
-from semantic_kitti_pytorch.data.datasets import KITTI_METADATA
-from semantic_kitti_pytorch.data.datasets import SemanticKITTI_Completion, VOXEL_DIMS
+from train.optimizer import LMSCNetOptimizer
+from utils.pytorch import gpu_tools, seed
+from utils.yaml import config_tools
 
 
 def main(args):
 
-    # 0. Set seed
+    # 0. Set seed, device
     seed.seed_all(0)
+    device = gpu_tools.get_device()
 
     # 1. Load config
     config_path = args.config_file
     LMSCNet_yaml = config_tools.load_yaml(config_path)
+    OPTIMIZER_CFG = LMSCNet_yaml['OPTIMIZER']
     TRAIN_CFG = LMSCNet_yaml['TRAIN']
 
     # 2. Load dataset
@@ -26,37 +36,39 @@ def main(args):
         DATASET_ROOT = LMSCNet_yaml['DATASET']['root_dir']
 
     # 3. Load dataloaders
-    # dataloaders_dict = {
-        # 'train': LMSCNetDataLoader(train_dataset, batch_size=TRAIN_CFG['batch_size'], shuffle=True),
-        # 'valid': None,
-    # }
+    train_dataset = LMSCNetDataset(DATASET_ROOT, phase='train')
+    val_dataset = LMSCNetDataset(DATASET_ROOT, phase='valid')
 
-    train_dataset = SemanticKITTI_Completion(DATASET_ROOT, phase='train')
-    val_dataset = SemanticKITTI_Completion(DATASET_ROOT, phase='valid')
     dataloader_dict = {
-        'train': DataLoader(train_dataset, batch_size=TRAIN_CFG['batch_size'], shuffle=True),
-        'valid': DataLoader(val_dataset, batch_size=TRAIN_CFG['batch_size'], shuffle=False),
+        'train': DataLoader(train_dataset,
+                            batch_size=TRAIN_CFG['batch_size'],
+                            shuffle=True,
+                            num_workers=1),
+        'valid': DataLoader(val_dataset,
+                            batch_size=TRAIN_CFG['batch_size'],
+                            shuffle=False,
+                            num_workers=1),
     }
 
-    # 4. Initialize model
-    network_kitti = LMSCNet(n_classes=20, voxel_dim=VOXEL_DIMS)
+    # 4. Load model
+    model = LMSCNet(input_dims=VOXEL_DIMS,
+                    num_classes=20)
     # model.apply(model.weights_initializer)
-    print(network_kitti)
 
     # 5. Train model
-    device = torch.device(
-        'cuda') if torch.cuda.is_available() else torch.device('cpu')
-    device = 'cpu'
-    trainer = LMSCNetTrainer(model=network_kitti,
-                             dataloader_dict=dataloader_dict,
-                             TRAIN_CFG=TRAIN_CFG,
+    optimizer = LMSCNetOptimizer(model=model,
+                                 config=OPTIMIZER_CFG)
+
+    trainer = LMSCNetTrainer(model=model,
+                             dataloader=dataloader_dict,
+                             optimizer=optimizer,
+                             train_cfg=TRAIN_CFG,
                              device=device)
+
     trainer.train()
 
     # 6. Get best record
     print("Best record: ", trainer.get_best_record())
-
-    ##### End of main #####
 
 
 if __name__ == "__main__":
