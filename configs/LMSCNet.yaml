@@ -32,7 +32,7 @@ STATUS:
   resume: false
 TRAIN:
   epochs: 80
-  batch_size: 8
+  batch_size: 1
   # Optimizer settings
   optimizer: Adam # [Adam, SGD]
   learning_rate: 0.001
@@ -41,6 +41,7 @@ TRAIN:
   SGD_momentum: NA
   SGD_weight_decay: NA
   scheduler: None # [None, constant, power_iteration]
+  scheduler_frequency: epoch # [epoch, batch]
   # Logger settings
   log_dir: experiments
   summary_period: 50 # [steps]

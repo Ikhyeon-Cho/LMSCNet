@@ -97,16 +97,11 @@ def train(model, optimizer, scheduler, dataset, _cfg, start_epoch, logger, tbwri
 
             # Load data to device
             data = dict_to(data, device, dtype)
-
             scores = model(data)
-
             loss = model.compute_loss(scores, data)
 
-            # Zero out the gradients.
             optimizer.zero_grad()
-            # Backward pass: gradient of loss wr. each model parameter.
             loss['total'].backward()
-            # update parameters of model by gradients.
             optimizer.step()
 
             if _cfg.dict_['SCHEDULER']['FREQUENCY'] == 'iteration':
