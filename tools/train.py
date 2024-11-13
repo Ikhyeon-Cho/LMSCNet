@@ -11,6 +11,7 @@ import os
 import argparse
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import sys
 from glob import glob
@@ -71,7 +72,7 @@ def train(model, optimizer, scheduler, dataset, _cfg, start_epoch, logger, tbwri
                 state[k] = v.to(device)
 
     # 3. Initialize metrics
-    dset = dataset['train']
+    dset: DataLoader = dataset['train']
     n_iterations = len(dset)  # number of iteration depends on batch size
     metrics = Metrics(dset.dataset.nbr_classes,
                       n_iterations, model.get_scales())
@@ -126,16 +127,17 @@ def train(model, optimizer, scheduler, dataset, _cfg, start_epoch, logger, tbwri
 
             metrics.add_batch(prediction=scores, target=model.get_target(data))
 
+        # Record Epoch Losses
         for l_key in metrics.losses_track.train_losses:
+
             tbwriter.add_scalar('train_loss_epoch/{}'.format(l_key),
                                 metrics.losses_track.train_losses[l_key].item(
-            )/metrics.losses_track.train_iteration_counts,
-                epoch - 1)
+            )/metrics.losses_track.train_iteration_counts, epoch - 1)
+
+        # Record Learning Rate
         tbwriter.add_scalar('lr/lr', scheduler.get_lr()[0], epoch - 1)
 
-        epoch_loss = metrics.losses_track.train_losses['total'] / \
-            metrics.losses_track.train_iteration_counts
-
+        # Record Training Performance
         for scale in metrics.evaluator.keys():
             tbwriter.add_scalar('train_performance/{}/mIoU'.format(scale),
                                 metrics.get_semantics_mIoU(scale).item(), epoch-1)
@@ -145,11 +147,17 @@ def train(model, optimizer, scheduler, dataset, _cfg, start_epoch, logger, tbwri
             # tbwriter.add_scalar('train_performance/{}/Recall'.format(scale), metrics.get_occupancy_Recall(scale).item(), epoch-1)
             # tbwriter.add_scalar('train_performance/{}/F1'.format(scale), metrics.get_occupancy_F1(scale).item(), epoch-1)
 
+        # Print Epoch Loss
+        epoch_loss = metrics.losses_track.train_losses['total'] / \
+            metrics.losses_track.train_iteration_counts
         logger.info(
             '=> [Epoch {} - Total Train Loss = {}]'.format(epoch, epoch_loss))
+
+        # Print Loss and Performance per Scale
         for scale in metrics.evaluator.keys():
             loss_scale = metrics.losses_track.train_losses['semantic_{}'.format(
                 scale)].item()/metrics.losses_track.train_iteration_counts
+
             logger.info('=> [Epoch {} - Scale {}: Loss = {:.6f} - mIoU = {:.6f} - IoU = {:.6f} '
                         '- P = {:.6f} - R = {:.6f} - F1 = {:.6f}]'
                         .format(epoch, scale, loss_scale,
@@ -159,9 +167,10 @@ def train(model, optimizer, scheduler, dataset, _cfg, start_epoch, logger, tbwri
                                 metrics.get_occupancy_Recall(scale).item(),
                                 metrics.get_occupancy_F1(scale).item()))
 
+        # Print Class-wise IoU
         logger.info('=> Epoch {} - Training set class-wise IoU:'.format(epoch))
         for i in range(1, metrics.nbr_classes):
-            class_name = dset.dataset.dataset_config['labels'][dset.dataset.dataset_config['learning_map_inv'][i]]
+            class_name = dset.dataset.kitti_yaml['labels'][dset.dataset.kitti_yaml['learning_map_inv'][i]]
             class_score = metrics.evaluator['1_1'].getIoU()[1][i]
             logger.info('    => IoU {}: {:.6f}'.format(
                 class_name, class_score))
@@ -169,6 +178,7 @@ def train(model, optimizer, scheduler, dataset, _cfg, start_epoch, logger, tbwri
         # Reset evaluator for validation...
         metrics.reset_evaluator()
 
+        # Validate
         checkpoint_info = validate(
             model, dataset['val'], _cfg, epoch, logger, tbwriter, metrics)
 
@@ -177,10 +187,11 @@ def train(model, optimizer, scheduler, dataset, _cfg, start_epoch, logger, tbwri
         metrics.losses_track.restart_train_losses()
         metrics.losses_track.restart_validation_losses()
 
+        # Update Learning Rate
         if _cfg.dict_['SCHEDULER']['FREQUENCY'] == 'epoch':
             scheduler.step()
 
-        # Save checkpoints
+        # Save Checkpoints
         for k in checkpoint_info.keys():
             checkpoint_path = os.path.join(
                 _cfg.dict_['OUTPUT']['OUTPUT_PATH'], 'chkpt', k)
@@ -273,7 +284,7 @@ def validate(model, dset, _cfg, epoch, logger, tbwriter, metrics):
         logger.info(
             '=> Epoch {} - Validation set class-wise IoU:'.format(epoch))
         for i in range(1, metrics.nbr_classes):
-            class_name = dset.dataset.dataset_config['labels'][dset.dataset.dataset_config['learning_map_inv'][i]]
+            class_name = dset.dataset.kitti_yaml['labels'][dset.dataset.kitti_yaml['learning_map_inv'][i]]
             class_score = metrics.evaluator['1_1'].getIoU()[1][i]
             logger.info('    => {}: {:.6f}'.format(class_name, class_score))
 

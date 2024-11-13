@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from data.dataloader import LMSCNetDataset, VOXEL_DIMS
 from models.LMSCNet import LMSCNet, LMSCNetLoss
 from train.trainer import LMSCNetTrainer
-from train.optimizer import LMSCNetOptimizer
+from train.optimizer import Optimizer
 from utils.pytorch import gpu_tools, seed
 from utils.yaml import config_tools
 
@@ -56,7 +56,7 @@ def main(args):
     # model.apply(model.weights_initializer)
 
     # 5. Train model
-    optimizer = LMSCNetOptimizer(model=model,
+    optimizer = Optimizer(model=model,
                                  config=OPTIMIZER_CFG)
 
     trainer = LMSCNetTrainer(model=model,

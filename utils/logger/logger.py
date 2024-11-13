@@ -11,13 +11,12 @@ import logging
 import os
 
 
-def Tensorboard(log_dir: str, timezone: str = None):
+def Tensorboard(log_dir: str):
     """Get TensorBoard logger instance"""
-    return SummaryWriter(
-        log_dir=os.path.join(log_dir, f'log_{get_current_time(timezone=timezone)}'))
+    return SummaryWriter(log_dir=log_dir)
 
 
-def Console(log_dir: str, filename: str = 'logs', timezone: str = None):
+def Console(log_dir: str, filename: str = 'logs.log'):
     """Get logger instance"""
 
     # Create logger
@@ -34,14 +33,11 @@ def Console(log_dir: str, filename: str = 'logs', timezone: str = None):
     logger.addHandler(console_handler)
 
     # Ensure log directory exists
-    file_path = os.path.join(
-        log_dir, f'log_{get_current_time(timezone=timezone)}')
-    if not os.path.exists(file_path):
-        os.makedirs(file_path)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
 
     # Add file handler to save logs to file
-    file_handler = logging.FileHandler(
-        os.path.join(file_path, filename))
+    file_handler = logging.FileHandler(os.path.join(log_dir, filename))
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)

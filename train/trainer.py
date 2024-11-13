@@ -8,18 +8,16 @@ Re-implementation of LMSCNet.
 Reference: https://github.com/astra-vision/LMSCNet
 """
 
-import torch
-import torch.optim as optim
-from models.LMSCNet import LMSCNet, LMSCNetLoss
-from train.optimizer import LMSCNetOptimizer
-from utils.pytorch.gpu_tools import to_device
 import os
-from utils.logger import logger
-from utils.logger.time import get_current_time
+import torch
+from models.LMSCNet import LMSCNet, LMSCNetLoss
+from train.optimizer import Optimizer
+from utils.pytorch.gpu_tools import to_device
+from utils.logger import logger, time
 
 
 class LMSCNetTrainer:
-    def __init__(self, model: LMSCNet, dataloader: dict, optimizer: LMSCNetOptimizer, train_cfg: dict, device: str):
+    def __init__(self, model: LMSCNet, dataloader: dict, optimizer: Optimizer, train_cfg: dict, device: str):
         # Model, Data, Loss
         self.model = model.to(device)
         self.dataloader = dataloader
@@ -31,9 +29,10 @@ class LMSCNetTrainer:
         self.CFG = train_cfg
         self.device = device
 
-        # Logger to monitor training process
-        self.log_dir = self.CFG['log_dir']
+        # Logging directory to monitor training process
         self.global_step = 0
+        self.time = time.get_current_time(timezone="Asia/Seoul")
+        self.log_dir = os.path.join(self.CFG['log_dir'], f'log_{self.time}')
 
         # Store best loss for model saving
         self.best_loss = float('inf')
@@ -48,11 +47,13 @@ class LMSCNetTrainer:
 
         # Parameters
         NUM_EPOCHS = self.CFG['epochs']
+        SUMMARY_PERIOD = self.CFG['summary_period']
 
         # Training loop
         for epoch in range(1, NUM_EPOCHS+1):
 
-            epoch_loss = 0.0
+            # To calculate epoch loss
+            sum_batch_loss = 0.0
             num_batches = 0
 
             CONSOLE.info(
@@ -71,12 +72,25 @@ class LMSCNetTrainer:
                 loss_1_8 = self.loss_fn.CE_Loss_1_8(pred, batch['label_1_8'])
                 batch_loss = (loss_1_1 + loss_1_2 + loss_1_4 + loss_1_8) / 4
 
-                # Record losses
-                loss_print = (
-                    f"=> Epoch [{epoch}/{NUM_EPOCHS}], Iteration [{num_batches+1}/{len(self.dataloader['train'])}], "
-                    f"Learn Rate: {self.optimizer.param_groups[0]['lr']}, Train Losses: {loss_1_1:.4f}, {loss_1_2:.4f}, {loss_1_4:.4f}, {loss_1_8:.4f}"
-                )
-                CONSOLE.info(loss_print)
+                # Update epoch loss
+                sum_batch_loss += batch_loss
+                num_batches += 1
+
+                # Print losses per summary period
+                if (num_batches == 1) or (num_batches % SUMMARY_PERIOD == 0):
+                    loss_print = (
+                        f"=> Epoch [{epoch}/{NUM_EPOCHS}] | "
+                        f"Step [{num_batches}/{len(self.dataloader['train'])}] | "
+                        f"lr: {self.optimizer.param_groups[0]['lr']:.6f} | "
+                        f"Avg loss: {batch_loss:.4f} ("
+                        f"1_1: {loss_1_1:.4f}, "
+                        f"1_2: {loss_1_2:.4f}, "
+                        f"1_4: {loss_1_4:.4f}, "
+                        f"1_8: {loss_1_8:.4f})"
+                    )
+                    CONSOLE.info(loss_print)
+
+                self.validate()
 
                 # Update network parameters
                 self.optimizer.zero_grad()
@@ -90,10 +104,6 @@ class LMSCNetTrainer:
                                      self.optimizer.param_groups[0]['lr'],
                                      self.global_step)
 
-                # Update epoch loss
-                epoch_loss += batch_loss
-                num_batches += 1
-
                 # Record batch loss
                 TB_LOGGER.add_scalar(
                     'Loss/batch_total', batch_loss, self.global_step)
@@ -105,31 +115,36 @@ class LMSCNetTrainer:
                     'Loss/batch_1_4', loss_1_4.item(), self.global_step)
                 TB_LOGGER.add_scalar(
                     'Loss/batch_1_8', loss_1_8.item(), self.global_step)
-
-                if num_batches % 10 == 0:  # Print every 10 batches
-                    CONSOLE.info(
-                        f"  Batch {num_batches}: Loss = {batch_loss:.4f}")
-
                 # Update global step
                 self.global_step += 1
 
             # Record epoch loss
-            avg_epoch_loss = epoch_loss / num_batches
-            TB_LOGGER.add_scalar('Loss/epoch', avg_epoch_loss, epoch)
+            epoch_loss = sum_batch_loss / num_batches
+            TB_LOGGER.add_scalar('Loss/epoch', epoch_loss, epoch)
 
             # Update best loss and save model if improved
-            if avg_epoch_loss < self.best_loss:
-                self.best_loss = avg_epoch_loss
-                self._save_checkpoint(epoch, avg_epoch_loss)
+            if epoch_loss < self.best_loss:
+                self.best_loss = epoch_loss
+                self._save_checkpoint(epoch, epoch_loss)
 
             CONSOLE.info(
-                f"  Epoch {epoch} Average Loss: {avg_epoch_loss:.4f}")
+                f"=> Epoch {epoch} Average Loss: {epoch_loss:.4f}")
 
         # End of training loop
         TB_LOGGER.close()
 
+    def validate(self):
+        return 1
+
+    def get_best_record(self):
+        return {
+            'best_loss': self.best_loss,
+            'checkpoint_dir': self.log_dir
+        }
+
     def _save_checkpoint(self, epoch, loss):
         """Save model checkpoint when best loss is achieved"""
+
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
@@ -138,21 +153,10 @@ class LMSCNetTrainer:
             'loss': loss,
             'config': self.CFG
         }
+
         checkpoint_path = os.path.join(
-            self.CFG['checkpoint_dir'], f'best_model_{get_current_time(timezone="Asia/Seoul")}.pth')
+            self.log_dir, f'best_model_{self.time}.pth')
         torch.save(checkpoint, checkpoint_path)
-
-    def validate(self):
-        pass
-
-    def get_best_record(self):
-        return {
-            'best_loss': self.best_loss,
-            'checkpoint_dir': self.log_dir
-        }
-
-    def __del__(self):
-        pass
 
 
 if __name__ == "__main__":

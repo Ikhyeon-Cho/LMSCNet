@@ -2,7 +2,7 @@ import torch.optim as optim
 from models.LMSCNet import LMSCNet
 
 
-class LMSCNetOptimizer:
+class Optimizer:
 
     def __init__(self, model: LMSCNet, config: dict):
         self.model = model
