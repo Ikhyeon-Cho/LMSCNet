@@ -11,66 +11,7 @@ Reference: https://github.com/astra-vision/LMSCNet
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-from models.nn_modules import Conv2DRelu
-
-
-class SegmentationHead3d(nn.Module):
-
-    def __init__(self, planes_in, planes_hidden, num_classes, dilation_rates):
-        '''
-        3D Segmentation heads to retrieve semantic segmentation at each scale.
-        Formed by Dim expansion, Conv3D, ASPP block, Conv3D.
-        '''
-        super().__init__()
-
-        self.dilation_rates = dilation_rates
-
-        # Initial 3D convolution
-        self.initial_conv = nn.Conv3d(planes_in, planes_hidden,
-                                      kernel_size=3, padding=1, stride=1)
-        self.relu = nn.ReLU(inplace=True)
-
-        # ASPP Block
-        self.aspp_conv1 = nn.ModuleList()
-        self.aspp_bn1 = nn.ModuleList()
-        self.aspp_conv2 = nn.ModuleList()
-        self.aspp_bn2 = nn.ModuleList()
-
-        for dil in dilation_rates:
-            self.aspp_conv1.append(nn.Conv3d(planes_hidden, planes_hidden,
-                                             kernel_size=3, padding=dil, dilation=dil, bias=False))
-            self.aspp_bn1.append(nn.BatchNorm3d(planes_hidden))
-            self.aspp_conv2.append(nn.Conv3d(planes_hidden, planes_hidden,
-                                             kernel_size=3, padding=dil, dilation=dil, bias=False))
-            self.aspp_bn2.append(nn.BatchNorm3d(planes_hidden))
-
-        # Final classification layer
-        self.voxel_classifier = nn.Conv3d(planes_hidden, num_classes,
-                                          kernel_size=3, padding=1, stride=1)  # why kernel size is 3? not conv 1x1?
-
-    def forward(self, completion_3d):
-
-        # Dimension expansion for segmentation
-        completion_3d = completion_3d[:, None, :, :, :]
-
-        # Initial 3D Convolution
-        completion_3d = self.relu(self.initial_conv(completion_3d))
-
-        # First ASPP branch
-        aspp_out = self.aspp_bn2[0](self.aspp_conv2[0](
-            self.relu(self.aspp_bn1[0](self.aspp_conv1[0](completion_3d)))))
-
-        # Remaining ASPP branches
-        for i in range(1, len(self.dilation_rates)):
-            branch_out = self.aspp_bn2[i](self.aspp_conv2[i]
-                                          (self.relu(self.aspp_bn1[i](self.aspp_conv1[i](completion_3d)))))
-            aspp_out += branch_out
-
-        # Skip connection (residual) and final 3D Convolution
-        completion_3d = self.relu(aspp_out + completion_3d)
-        seg_completion_3d = self.voxel_classifier(completion_3d)
-
-        return seg_completion_3d
+from models.nn_modules import Conv2DRelu, SegmentationHead3d
 
 
 class LMSCNet(nn.Module):
@@ -84,7 +25,9 @@ class LMSCNet(nn.Module):
         self.num_classes = num_classes
         self.voxel_dims = input_dims  # [256, 256, 32]
 
+        #########################################
         # Encoder modules
+        #########################################
         CH_BASE = self.voxel_dims[2]  # 32
         CH_1_2 = int(CH_BASE*1.5)     # 48
         CH_1_4 = int(CH_BASE*2)       # 64
@@ -109,7 +52,9 @@ class LMSCNet(nn.Module):
             Conv2DRelu(CH_1_4, CH_1_8, kernel_size=3, padding=1, stride=1),
             Conv2DRelu(CH_1_8, CH_1_8, kernel_size=3, padding=1, stride=1))
 
+        #########################################
         # Output branch modules
+        #########################################
         CH_OUT_1_8 = int(CH_BASE/8)  # 4
         CH_OUT_1_4 = int(CH_BASE/4)  # 8
         CH_OUT_1_2 = int(CH_BASE/2)  # 16
@@ -131,33 +76,39 @@ class LMSCNet(nn.Module):
         self.seg_head_1_1 = SegmentationHead3d(
             1, 8, num_classes, dilation_rates)
 
+        #########################################
         # Upsampling modules
-        self.upconv_1_8 = nn.ConvTranspose2d(CH_OUT_1_8, CH_OUT_1_8,  # spatial: 32 -> 64
+        #########################################
+        # spatial: 32 -> 64
+        self.upconv_1_8 = nn.ConvTranspose2d(CH_OUT_1_8, CH_OUT_1_8,
                                              kernel_size=6, padding=2, stride=2)
-
-        self.upconv_1_4 = nn.ConvTranspose2d(CH_OUT_1_4, CH_OUT_1_4,  # spatial: 64 -> 128
+        # spatial: 64 -> 128
+        self.upconv_1_4 = nn.ConvTranspose2d(CH_OUT_1_4, CH_OUT_1_4,
                                              kernel_size=6, padding=2, stride=2)
-
-        self.upconv_1_2 = nn.ConvTranspose2d(CH_OUT_1_2, CH_OUT_1_2,  # spatial: 128 -> 256
+        # spatial: 128 -> 256
+        self.upconv_1_2 = nn.ConvTranspose2d(CH_OUT_1_2, CH_OUT_1_2,
                                              kernel_size=6, padding=2, stride=2)
-
-        self.upconv_1_8_to_1_2 = nn.ConvTranspose2d(CH_OUT_1_8, CH_OUT_1_8,  # spatial: 32 -> 128
+        # spatial: 32 -> 128
+        self.upconv_1_8_to_1_2 = nn.ConvTranspose2d(CH_OUT_1_8, CH_OUT_1_8,
                                                     kernel_size=4, padding=0, stride=4)
-
-        self.upconv_1_8_to_1_1 = nn.ConvTranspose2d(CH_OUT_1_8, CH_OUT_1_8,  # spatial: 32 -> 256
+        # spatial: 32 -> 256
+        self.upconv_1_8_to_1_1 = nn.ConvTranspose2d(CH_OUT_1_8, CH_OUT_1_8,
                                                     kernel_size=8, padding=0, stride=8)
-
-        self.upconv_1_4_to_1_1 = nn.ConvTranspose2d(CH_OUT_1_4, CH_OUT_1_4,  # spatial: 64 -> 256
+        # spatial: 64 -> 256
+        self.upconv_1_4_to_1_1 = nn.ConvTranspose2d(CH_OUT_1_4, CH_OUT_1_4,
                                                     kernel_size=4, padding=0, stride=4)
 
+        #########################################
         # Decoder modules
-        self.conv_1_4 = nn.Conv2d((CH_OUT_1_8 + CH_1_4), CH_1_4,  # spatial: (32+64) -> 64 # why reduced to encoder channels?
+        #########################################
+        # spatial: (32+64) -> 64  # TODO: Why reduced to encoder channels?
+        self.conv_1_4 = nn.Conv2d((CH_OUT_1_8 + CH_1_4), CH_1_4,
                                   kernel_size=3, padding=1, stride=1)
-
-        self.conv_1_2 = nn.Conv2d((CH_OUT_1_8 + CH_OUT_1_4 + CH_1_2), CH_1_2,  # spatial: (32+8+48) -> 48
+        # spatial: (32+8+48) -> 48
+        self.conv_1_2 = nn.Conv2d((CH_OUT_1_8 + CH_OUT_1_4 + CH_1_2), CH_1_2,
                                   kernel_size=3, padding=1, stride=1)
-
-        self.conv_1_1 = nn.Conv2d((CH_OUT_1_8 + CH_OUT_1_4 + CH_OUT_1_2 + CH_BASE), CH_BASE,  # spatial: (4+8+16+32) -> 32
+        # spatial: (4+8+16+32) -> 32
+        self.conv_1_1 = nn.Conv2d((CH_OUT_1_8 + CH_OUT_1_4 + CH_OUT_1_2 + CH_BASE), CH_BASE,
                                   kernel_size=3, padding=1, stride=1)
 
     def forward(self, input_tensor, phase='train'):
@@ -225,17 +176,38 @@ class LMSCNetLoss:
         self.num_classes = 20
         self.CE_Loss = nn.CrossEntropyLoss()
 
-    def CE_Loss_1_1(self, preds: dict, targets: torch.Tensor):
+    def CE_Loss_1_1(self, preds: dict, targets: torch.Tensor) -> torch.Tensor:
         return self.CE_Loss(preds['pred_semantic_1_1'], targets)
 
-    def CE_Loss_1_2(self, preds: dict, targets: torch.Tensor):
+    def CE_Loss_1_2(self, preds: dict, targets: torch.Tensor) -> torch.Tensor:
         return self.CE_Loss(preds['pred_semantic_1_2'], targets)
 
-    def CE_Loss_1_4(self, preds: dict, targets: torch.Tensor):
+    def CE_Loss_1_4(self, preds: dict, targets: torch.Tensor) -> torch.Tensor:
         return self.CE_Loss(preds['pred_semantic_1_4'], targets)
 
-    def CE_Loss_1_8(self, preds: dict, targets: torch.Tensor):
+    def CE_Loss_1_8(self, preds: dict, targets: torch.Tensor) -> torch.Tensor:
         return self.CE_Loss(preds['pred_semantic_1_8'], targets)
+
+
+class LMSCNetMetrics:
+    def __init__(self, num_classes: int):
+        self.num_classes = num_classes
+        self.evaluator = {}
+
+    def add_pred_1_1(self, preds: dict, targets: torch.Tensor):
+        return self._update_confMat(preds['pred_semantic_1_1'], targets)
+
+    def add_pred_1_2(self, preds: dict, targets: torch.Tensor):
+        return self._update_confMat(preds['pred_semantic_1_2'], targets)
+
+    def add_pred_1_4(self, preds: dict, targets: torch.Tensor):
+        return self._update_confMat(preds['pred_semantic_1_4'], targets)
+
+    def add_pred_1_8(self, preds: dict, targets: torch.Tensor):
+        return self._update_confMat(preds['pred_semantic_1_8'], targets)
+
+    def _update_confMat(self, preds: torch.Tensor, targets: torch.Tensor):
+        pass
 
 
 # if __name__ == '__main__':

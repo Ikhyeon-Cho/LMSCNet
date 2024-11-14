@@ -84,3 +84,62 @@ class ASPP(nn.Module):
 
         # Final convolution to fuse features
         return self.final_conv(x)
+
+
+class SegmentationHead3d(nn.Module):
+
+    def __init__(self, planes_in, planes_hidden, num_classes, dilation_rates):
+        '''
+        3D Segmentation heads to retrieve semantic segmentation at each scale.
+        Formed by Dim expansion, Conv3D, ASPP block, Conv3D.
+        '''
+        super().__init__()
+
+        self.dilation_rates = dilation_rates
+
+        # Initial 3D convolution
+        self.initial_conv = nn.Conv3d(planes_in, planes_hidden,
+                                      kernel_size=3, padding=1, stride=1)
+        self.relu = nn.ReLU(inplace=True)
+
+        # ASPP Block
+        self.aspp_conv1 = nn.ModuleList()
+        self.aspp_bn1 = nn.ModuleList()
+        self.aspp_conv2 = nn.ModuleList()
+        self.aspp_bn2 = nn.ModuleList()
+
+        for dil in dilation_rates:
+            self.aspp_conv1.append(nn.Conv3d(planes_hidden, planes_hidden,
+                                             kernel_size=3, padding=dil, dilation=dil, bias=False))
+            self.aspp_bn1.append(nn.BatchNorm3d(planes_hidden))
+            self.aspp_conv2.append(nn.Conv3d(planes_hidden, planes_hidden,
+                                             kernel_size=3, padding=dil, dilation=dil, bias=False))
+            self.aspp_bn2.append(nn.BatchNorm3d(planes_hidden))
+
+        # Final classification layer
+        self.voxel_classifier = nn.Conv3d(planes_hidden, num_classes,
+                                          kernel_size=3, padding=1, stride=1)  # why kernel size is 3? not conv 1x1?
+
+    def forward(self, completion_3d):
+
+        # Dimension expansion for segmentation
+        completion_3d = completion_3d[:, None, :, :, :]
+
+        # Initial 3D Convolution
+        completion_3d = self.relu(self.initial_conv(completion_3d))
+
+        # First ASPP branch
+        aspp_out = self.aspp_bn2[0](self.aspp_conv2[0](
+            self.relu(self.aspp_bn1[0](self.aspp_conv1[0](completion_3d)))))
+
+        # Remaining ASPP branches
+        for i in range(1, len(self.dilation_rates)):
+            branch_out = self.aspp_bn2[i](self.aspp_conv2[i]
+                                          (self.relu(self.aspp_bn1[i](self.aspp_conv1[i](completion_3d)))))
+            aspp_out += branch_out
+
+        # Skip connection (residual) and final 3D Convolution
+        completion_3d = self.relu(aspp_out + completion_3d)
+        seg_completion_3d = self.voxel_classifier(completion_3d)
+
+        return seg_completion_3d

@@ -9,7 +9,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 
-def get_current_time(timezone: str = None):
+def now(timezone: str = None):
     """
     Get current time in Seoul, Korea.
     """
@@ -21,5 +21,5 @@ def get_current_time(timezone: str = None):
 
 if __name__ == "__main__":
 
-    print(get_current_time())
-    print(get_current_time(timezone='Asia/Seoul'))
+    print(now())
+    print(now(timezone='Asia/Seoul'))
