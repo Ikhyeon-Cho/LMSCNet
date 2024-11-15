@@ -85,7 +85,7 @@ class LMSCNetDataset:
     def __len__(self):
         return len(self.filenames)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx) -> dict:
         """Get multi-scale data for a single sample
 
         Args:

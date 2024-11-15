@@ -1,3 +1,10 @@
+"""
+Author: Ikhyeon Cho
+Link: https://github.com/Ikhyeon-Cho
+File: optimizer.py
+Date: 2024/11/13 18:50
+"""
+
 import torch.optim as optim
 from models.LMSCNet import LMSCNet
 
@@ -5,18 +12,14 @@ from models.LMSCNet import LMSCNet
 class Optimizer:
 
     def __init__(self, model: LMSCNet, config: dict):
-        self.model = model
-        self.config = config
-        self.optimizer = self._set_optimizer(config)
-        self.scheduler = self._set_scheduler(config)
+        self._model = model
+        self._config = config
 
-    def get_optimizer(self):
-        return self.optimizer
+        # Public attributes
+        self.optimizer = self._init_optimizer(config)
+        self.scheduler = self._init_scheduler(config)
 
-    def get_scheduler(self):
-        return self.scheduler
-
-    def _set_optimizer(self, config: dict):
+    def _init_optimizer(self, config: dict):
         """Sets up the optimizer based on configuration."""
 
         LEARNING_RATE = config['learning_rate']
@@ -29,11 +32,11 @@ class Optimizer:
         SGD_WEIGHT_DECAY = config['SGD_weight_decay']
 
         if OPTIMIZER_TYPE == 'Adam':
-            optimizer = optim.Adam(self.model.parameters(),
+            optimizer = optim.Adam(self._model.parameters(),
                                    lr=LEARNING_RATE,
                                    betas=(ADAM_BETA1, ADAM_BETA2))
         elif OPTIMIZER_TYPE == 'SGD':
-            optimizer = optim.SGD(self.model.parameters(),
+            optimizer = optim.SGD(self._model.parameters(),
                                   lr=LEARNING_RATE,
                                   momentum=SGD_MOMENTUM,
                                   weight_decay=SGD_WEIGHT_DECAY)
@@ -43,7 +46,7 @@ class Optimizer:
 
         return optimizer
 
-    def _set_scheduler(self, config: dict):
+    def _init_scheduler(self, config: dict):
         """Sets up the scheduler based on configuration."""
 
         SCHEDULER_TYPE = config['scheduler']

@@ -1,51 +1,40 @@
-DATALOADER:
-  num_workers: 4
 DATASET:
-  augmentation:
-    flips: true
-  modalities:
-    3d_label: true
-    3d_occluded: true
-    3d_occupancy: true
   root_dir: /data/semanticKITTI/dataset
   type: SemanticKITTI
+  augmentation:
+    flips: true
+
 MODEL:
   type: LMSCNet
-OPTIMIZER:
-  type: Adam # [Adam, SGD]
-  learning_rate: 0.001
-  Adam_beta1: 0.9 # Adam beta1
-  Adam_beta2: 0.999 # Adam beta2
-  SGD_momentum: NA
-  SGD_weight_decay: NA
-  scheduler: None # [None, constant, power_iteration]
-  frequency: epoch
-  lr_power: 0.98
-OUTPUT:
-  best_loss: 999999999999
-  best_metric: -999999999999
-  output_path: ../SSC_out/LMSCNet_SemanticKITTI_1101_071003
-  out_root: ../SSC_out/
-STATUS:
-  config: SSC_configs/examples/LMSCNet.yaml
-  last: ""
-  resume: false
+  num_classes: 20
+  voxel_dims: [256, 256, 32]
+
 TRAIN:
-  epochs: 80
+  # Dataloader
   batch_size: 4
-  # Optimizer settings
-  optimizer: Adam # [Adam, SGD]
+  num_workers: 4
+  # Trainer
+  epochs: 80
   learning_rate: 0.001
+  summary_period: 10 # [batch]
+  checkpoint_period: 15 # [epoch]
+  validation_summary_period: 1 # [epoch]
+  # Optimizer
+  type: Adam # [Adam, SGD]
   Adam_beta1: 0.9
   Adam_beta2: 0.999
   SGD_momentum: NA
   SGD_weight_decay: NA
+  # Scheduler
   scheduler: None # [None, constant, power_iteration]
-  scheduler_frequency: epoch # [epoch, batch]
-  # Logger settings
+  scheduler_frequency: epoch
+  lr_power: 0.98
+
+LOSS:
+  base_type: CrossEntropyLoss
+  weight: None
+
+LOGGER:
   log_dir: experiments
-  summary_period: 50 # [steps]
-  checkpoint_period: 15 # [epochs]
-VAL:
-  batch_size: 8
-  summary_period: 20
+  timezone: Asia/Seoul # see https://docs.python.org/3.13/library/zoneinfo.html#module-zoneinfo
+

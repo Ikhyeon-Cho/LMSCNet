@@ -1,3 +1,10 @@
+"""
+Author: Ikhyeon Cho
+Link: https://github.com/Ikhyeon-Cho
+File: device_tools.py
+Date: 2024/11/2 18:50
+"""
+
 import torch
 
 

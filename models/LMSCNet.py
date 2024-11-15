@@ -111,6 +111,8 @@ class LMSCNet(nn.Module):
         self.conv_1_1 = nn.Conv2d((CH_OUT_1_8 + CH_OUT_1_4 + CH_OUT_1_2 + CH_BASE), CH_BASE,
                                   kernel_size=3, padding=1, stride=1)
 
+        self.apply(self.weights_initializer)
+
     def forward(self, input_tensor, phase='train'):
 
         features = input_tensor.to(torch.float32)
@@ -162,31 +164,27 @@ class LMSCNet(nn.Module):
 
         if phase == 'train':
             return {
-                'pred_semantic_1_1': seg_output_1_1.permute(0, 1, 3, 4, 2),
-                'pred_semantic_1_2': seg_output_1_2.permute(0, 1, 3, 4, 2),
-                'pred_semantic_1_4': seg_output_1_4.permute(0, 1, 3, 4, 2),
-                'pred_semantic_1_8': seg_output_1_8.permute(0, 1, 3, 4, 2)
+                'pred': seg_output_1_1.permute(0, 1, 3, 4, 2),
+                'pred_1_2': seg_output_1_2.permute(0, 1, 3, 4, 2),
+                'pred_1_4': seg_output_1_4.permute(0, 1, 3, 4, 2),
+                'pred_1_8': seg_output_1_8.permute(0, 1, 3, 4, 2)
             }
         else:
             return seg_output_1_1.permute(0, 1, 3, 4, 2)
 
-
-class LMSCNetLoss:
-    def __init__(self, config: dict):
-        self.num_classes = 20
-        self.CE_Loss = nn.CrossEntropyLoss()
-
-    def CE_Loss_1_1(self, preds: dict, targets: torch.Tensor) -> torch.Tensor:
-        return self.CE_Loss(preds['pred_semantic_1_1'], targets)
-
-    def CE_Loss_1_2(self, preds: dict, targets: torch.Tensor) -> torch.Tensor:
-        return self.CE_Loss(preds['pred_semantic_1_2'], targets)
-
-    def CE_Loss_1_4(self, preds: dict, targets: torch.Tensor) -> torch.Tensor:
-        return self.CE_Loss(preds['pred_semantic_1_4'], targets)
-
-    def CE_Loss_1_8(self, preds: dict, targets: torch.Tensor) -> torch.Tensor:
-        return self.CE_Loss(preds['pred_semantic_1_8'], targets)
+    def weights_initializer(self, m):
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv3d):
+            nn.init.kaiming_uniform_(
+                m.weight, mode='fan_in', nonlinearity='relu')
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm3d):
+            nn.init.ones_(m.weight)
+            nn.init.zeros_(m.bias)
+        elif isinstance(m, (Conv2DRelu, SegmentationHead3d)):
+            # For custom modules, initialize their children
+            for layer in m.children():
+                self.weights_initializer(layer)
 
 
 class LMSCNetMetrics:
@@ -194,34 +192,36 @@ class LMSCNetMetrics:
         self.num_classes = num_classes
         self.evaluator = {}
 
-    def add_pred_1_1(self, preds: dict, targets: torch.Tensor):
-        return self._update_confMat(preds['pred_semantic_1_1'], targets)
+    def add_preds_1_1(self, preds: dict, targets: torch.Tensor):
+        return self._update_confMat(preds['pred'], targets)
 
-    def add_pred_1_2(self, preds: dict, targets: torch.Tensor):
-        return self._update_confMat(preds['pred_semantic_1_2'], targets)
+    def add_preds_1_2(self, preds: dict, targets: torch.Tensor):
+        return self._update_confMat(preds['pred_1_2'], targets)
 
-    def add_pred_1_4(self, preds: dict, targets: torch.Tensor):
-        return self._update_confMat(preds['pred_semantic_1_4'], targets)
+    def add_preds_1_4(self, preds: dict, targets: torch.Tensor):
+        return self._update_confMat(preds['pred_1_4'], targets)
 
-    def add_pred_1_8(self, preds: dict, targets: torch.Tensor):
-        return self._update_confMat(preds['pred_semantic_1_8'], targets)
+    def add_preds_1_8(self, preds: dict, targets: torch.Tensor):
+        return self._update_confMat(preds['pred_1_8'], targets)
 
     def _update_confMat(self, preds: torch.Tensor, targets: torch.Tensor):
         pass
 
 
-# if __name__ == '__main__':
+if __name__ == '__main__':
 
-#     # Dataset
-#     from semantic_kitti_pytorch.data.datasets import SemanticKITTI_Completion
-#     dataset = SemanticKITTI_Completion(
-#         "/data/semanticKITTI/dataset/", phase='train')
-#     sample_dict = dataset[0]
+    # # Dataset
+    # from semantic_kitti_pytorch.data.datasets import SemanticKITTI_Completion
+    # dataset = SemanticKITTI_Completion(
+    #     "/data/semanticKITTI/dataset/", phase='train')
+    # sample_dict = dataset[0]
 
-#     voxel_occ = sample_dict['occupancy']
+    # voxel_occ = sample_dict['occupancy']
 
-#     # Model
-#     model = LMSCNet(num_classes=20, input_dims=[256, 256, 32])
-#     pred_1_1 = model(voxel_occ)
-#     print(voxel_occ.shape)
-#     print(pred_1_1.shape)
+    # Model
+    model = LMSCNet(num_classes=20, input_dims=[256, 256, 32])
+    print(model.num_classes)
+    print(model.voxel_dims)
+    # pred_1_1 = model(voxel_occ)
+    # print(voxel_occ.shape)
+    # print(pred_1_1.shape)

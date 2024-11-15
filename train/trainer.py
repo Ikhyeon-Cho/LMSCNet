@@ -4,170 +4,180 @@ Link: https://github.com/Ikhyeon-Cho
 File: trainer.py
 Date: 2024/11/2 18:50
 
-Re-implementation of LMSCNet.
+Unofficial re-implementation of LMSCNet.
 Reference: https://github.com/astra-vision/LMSCNet
 """
 
-import os
 import torch
-from models.LMSCNet import LMSCNet, LMSCNetLoss, LMSCNetMetrics
+from models.LMSCNet import LMSCNet, LMSCNetMetrics
+from torch.nn import CrossEntropyLoss
 from train.optimizer import Optimizer
-from utils.pytorch.gpu_tools import to_device
-from utils.logger import logger, time
-
+import train.eval_tools as eval_tools
+from utils.pytorch.device_tools import to_device
+from utils.logger import console, tboard
+import os
 
 class LMSCNetTrainer:
-    def __init__(self, model: LMSCNet, dataloader: dict, optimizer: Optimizer, train_cfg: dict, device: str):
+    def __init__(self, model: LMSCNet, data: dict, crit: CrossEntropyLoss, optim: Optimizer, cfg: dict, device: str, log_dir: str):
         # Model, Data, Loss, Optimizer, Scheduler
         self.model = model.to(device)
-        self.dataloader = dataloader
-        self.loss_fn = LMSCNetLoss(config=train_cfg)
-        self.optimizer = optimizer.get_optimizer()
-        self.scheduler = optimizer.get_scheduler()
+        self.dataloader = data
+        self.criterion = crit
+        self.optimizer = optim.optimizer
+        self.scheduler = optim.scheduler
 
         # Training configs
-        self.CFG = train_cfg
+        self.CFG = cfg
         self.device = device
 
-        # Logging directory to monitor training process
-        self.global_step = 0
-        self.time = time.now(timezone="Asia/Seoul")
-        self.log_dir = os.path.join(self.CFG['log_dir'], f'log_{self.time}')
-        self.CONSOLE = logger.Console(self.log_dir, filename='train.log')
-        self.TRAIN_LOGGER = logger.TensorboardLogger(self.log_dir, ns='Train')
-        self.metrics = LMSCNetMetrics(num_classes=20)
+        # Logger settings
+        self.log_dir = log_dir
+        self.logger = console.Logger(log_dir, filename='train.log')
+        self.tensorboard = tboard.Logger(log_dir, ns='Train')
+
+        self.global_batch_step = 0
+        self.eval = LMSCNetMetrics(num_classes=model.num_classes)
 
         # Store best loss for model saving
         self.best_loss = float('inf')
 
     def train(self):
-
-        # Parameters
         NUM_EPOCHS = self.CFG['epochs']
         SUMMARY_PERIOD = self.CFG['summary_period']
+        CHECKPOINT_PERIOD = self.CFG['checkpoint_period']
         SCHEDULER_PERIOD = self.CFG['scheduler_frequency']
+
+        LOSS_TRACKER = eval_tools.LossTracker()
 
         # Training loop
         for epoch in range(1, NUM_EPOCHS+1):
-            LOSS_TRACKER = logger.LossTracker(self.log_dir, ns='Train')
 
-            # Print learning rate of current epoch
-            learning_rate = self.optimizer.param_groups[0]['lr']
-            self.CONSOLE.info(f'=> ====== Epoch [{epoch}/{NUM_EPOCHS}] ======')
-            self.CONSOLE.info(f'=> Learning rate: {learning_rate}')
-            self.TRAIN_LOGGER.log_lr(learning_rate, self.global_step)
+            lr = self.optimizer.param_groups[0]['lr']
+            self.logger.info(f'=> ====== Epoch [{epoch}/{NUM_EPOCHS}] ======')
+            self.logger.info(f'=> Learning rate: {lr}')
+
+            self.model.train()
+            LOSS_TRACKER.reset()
 
             # Batch loop
-            self.model.train()
-            num_batches = 0
-            for batch in self.dataloader['train']:
+            for num_batches, batch in enumerate(self.dataloader['train']):
                 batch = to_device(batch, self.device)
 
                 # Compute training losses
                 pred = self.model(batch['occupancy'])
-                loss_1_1 = self.loss_fn.CE_Loss_1_1(pred, batch['label'])
-                loss_1_2 = self.loss_fn.CE_Loss_1_2(pred, batch['label_1_2'])
-                loss_1_4 = self.loss_fn.CE_Loss_1_4(pred, batch['label_1_4'])
-                loss_1_8 = self.loss_fn.CE_Loss_1_8(pred, batch['label_1_8'])
+                loss_1_1 = self.criterion(pred['pred'], batch['label'])
+                loss_1_2 = self.criterion(pred['pred_1_2'], batch['label_1_2'])
+                loss_1_4 = self.criterion(pred['pred_1_4'], batch['label_1_4'])
+                loss_1_8 = self.criterion(pred['pred_1_8'], batch['label_1_8'])
                 batch_loss = (loss_1_1 + loss_1_2 + loss_1_4 + loss_1_8) / 4
 
-                # Compute performance metrics (delayed update)
-                self.metrics.add_pred_1_1(pred, batch['label'])
-                self.metrics.add_pred_1_2(pred, batch['label_1_2'])
-                self.metrics.add_pred_1_4(pred, batch['label_1_4'])
-                self.metrics.add_pred_1_8(pred, batch['label_1_8'])
+                # Compute performance metrics (updated after batch loop)
+                self.eval.add_preds_1_1(pred, batch['label'])
+                self.eval.add_preds_1_2(pred, batch['label_1_2'])
+                self.eval.add_preds_1_4(pred, batch['label_1_4'])
+                self.eval.add_preds_1_8(pred, batch['label_1_8'])
 
                 # Update network parameters
                 self.optimizer.zero_grad()
                 batch_loss.backward()
                 self.optimizer.step()
 
-                # Update batch counter
-                num_batches += 1
-
                 # Print losses per period
-                if (num_batches == 1) or (num_batches % SUMMARY_PERIOD == 0):
+                if (num_batches == 0) or ((num_batches+1) % SUMMARY_PERIOD == 0):
                     loss_print = (
                         f"=> Epoch [{epoch}/{NUM_EPOCHS}] | "
-                        f"Step [{num_batches}/{len(self.dataloader['train'])}] | "
-                        f"lr: {learning_rate:.6f} | "
+                        f"Step [{num_batches+1}/{len(self.dataloader['train'])}] | "
+                        f"lr: {lr:.6f} | "
                         f"Avg loss: {batch_loss:.4f} ("
                         f"1_1: {loss_1_1:.4f}, "
                         f"1_2: {loss_1_2:.4f}, "
                         f"1_4: {loss_1_4:.4f}, "
                         f"1_8: {loss_1_8:.4f})"
                     )
-                    self.CONSOLE.info(loss_print)
+                    self.logger.info(loss_print)
 
                 # Save batch losses for tensorboard logging
                 batch_loss_dict = {
                     '1_1': loss_1_1, '1_2': loss_1_2,
                     '1_4': loss_1_4, '1_8': loss_1_8, 'total': batch_loss
                 }
-                LOSS_TRACKER.append(batch_loss_dict, self.global_step)
+                LOSS_TRACKER.append(batch_loss_dict, self.global_batch_step)
 
                 # Update learning rate
                 if (self.scheduler is not None) and (SCHEDULER_PERIOD == 'batch'):
+                    self.tensorboard.log_lr(lr, self.global_batch_step)
                     self.scheduler.step()
-                    self.TRAIN_LOGGER.log_lr(learning_rate, self.global_step)
 
-                # Update global step
-                self.global_step += 1
+                self.global_batch_step += 1
 
             # End of batch loop
 
-            # Logging batch losses to tensorboard
-            # self.loss_tracker.write_batch_losses()
-            self.TRAIN_LOGGER.log_batch_loss(
-                LOSS_TRACKER.batch_loss(), LOSS_TRACKER.get_steps())
+            # Print epoch losses
+            epoch_loss = LOSS_TRACKER.epoch_loss()
+            self.logger.info("=> -------- Summary ---------")
+            loss_print = (
+                f"=>   Training Loss (Epoch {epoch}) | "
+                f"Avg loss: {epoch_loss['total']:.4f} | "
+                f"1_1: {epoch_loss['1_1']:.4f} | "
+                f"1_2: {epoch_loss['1_2']:.4f} | "
+                f"1_4: {epoch_loss['1_4']:.4f} | "
+                f"1_8: {epoch_loss['1_8']:.4f}"
+            )
+            self.logger.info(loss_print)
 
-            # Validation
-            self.validate(epoch)
+            # Log losses, lr to tensorboard
+            self.tensorboard.log_batch_loss(
+                LOSS_TRACKER.batch_loss(), LOSS_TRACKER.batch_steps())
+            self.tensorboard.log_epoch_loss(epoch_loss, epoch)
+            self.tensorboard.log_lr(lr, epoch)
 
             # Update learning rate
             if (self.scheduler is not None) and (SCHEDULER_PERIOD == 'epoch'):
                 self.scheduler.step()
-                self.TRAIN_LOGGER.log_lr(learning_rate, self.global_step)
 
-            # Print & record epoch loss
-            # self.loss_tracker.write_epoch_losses(epoch)
-            self.TRAIN_LOGGER.log_epoch_loss(
-                LOSS_TRACKER.epoch_loss(), epoch)
+            # Validation
+            self.validate(epoch)
 
-            epoch_loss = sum_batch_loss / num_batches
-            self.CONSOLE.info(
-                f"=> Epoch {epoch} Average Loss: {epoch_loss:.4f}")
+            # Save checkpoint per period
+            if epoch % CHECKPOINT_PERIOD == 0:
+                self._save_checkpoint(
+                    epoch, epoch_loss, f'LMSCNet_epoch_{epoch}')
 
-            # Update best loss and save model if improved
-            if epoch_loss < self.best_loss:
-                self.best_loss = epoch_loss
-                self._save_checkpoint(epoch, epoch_loss)
+            # Save best model if improved
+            if epoch_loss["total"] < self.best_loss:
+                self.best_loss = epoch_loss["total"]
+                self._save_checkpoint(
+                    epoch, epoch_loss, f'LMSCNet_best')
 
         # End of training loop
-        self.TRAIN_LOGGER.close()
 
     def validate(self, epoch: int):
 
-        valid_loss_tracker = logger.LossTracker(self.log_dir, ns='Val')
+        VALIDATION_SUMMARY_PERIOD = self.CFG['validation_summary_period']
+
+        VAL_LOSS_TRACKER = eval_tools.LossTracker()
+        VAL_EVAL = LMSCNetMetrics(num_classes=self.model.num_classes)
+        VAL_TENSORBOARD = tboard.Logger(self.log_dir, ns='Val')
 
         self.model.eval()
         with torch.no_grad():
+            # Batch loop
             for batch in self.dataloader['valid']:
                 batch = to_device(batch, self.device)
 
                 # Compute validation losses
                 pred = self.model(batch['occupancy'])
-                loss_1_1 = self.loss_fn.CE_Loss_1_1(pred, batch['label'])
-                loss_1_2 = self.loss_fn.CE_Loss_1_2(pred, batch['label_1_2'])
-                loss_1_4 = self.loss_fn.CE_Loss_1_4(pred, batch['label_1_4'])
-                loss_1_8 = self.loss_fn.CE_Loss_1_8(pred, batch['label_1_8'])
+                loss_1_1 = self.criterion(pred['pred'], batch['label'])
+                loss_1_2 = self.criterion(pred['pred_1_2'], batch['label_1_2'])
+                loss_1_4 = self.criterion(pred['pred_1_4'], batch['label_1_4'])
+                loss_1_8 = self.criterion(pred['pred_1_8'], batch['label_1_8'])
                 batch_loss = (loss_1_1 + loss_1_2 + loss_1_4 + loss_1_8) / 4
 
                 # TODO: to be fixed: separate metrics for train and valid? or clean at the end of train
-                self.metrics.add_pred_1_1(pred, batch['label'])
-                self.metrics.add_pred_1_2(pred, batch['label_1_2'])
-                self.metrics.add_pred_1_4(pred, batch['label_1_4'])
-                self.metrics.add_pred_1_8(pred, batch['label_1_8'])
+                VAL_EVAL.add_preds_1_1(pred, batch['label'])
+                VAL_EVAL.add_preds_1_2(pred, batch['label_1_2'])
+                VAL_EVAL.add_preds_1_4(pred, batch['label_1_4'])
+                VAL_EVAL.add_preds_1_8(pred, batch['label_1_8'])
 
                 loss_dict = {
                     '1_1': loss_1_1,
@@ -176,33 +186,29 @@ class LMSCNetTrainer:
                     '1_8': loss_1_8,
                     'total': batch_loss
                 }
-                valid_loss_tracker.append(loss_dict)
-                # valid_loss_tracker.write_batch_losses()
+                VAL_LOSS_TRACKER.append(loss_dict)
+            # End of batch loop
 
-    def record_training_process(self, epoch: int, batch_loss: dict, num_batches: int):
-        pass
+            # Log losses to tensorboard
+            VAL_TENSORBOARD.log_batch_loss(
+                VAL_LOSS_TRACKER.batch_loss(), VAL_LOSS_TRACKER.batch_steps())
+            VAL_TENSORBOARD.log_epoch_loss(
+                VAL_LOSS_TRACKER.epoch_loss(), epoch)
 
-    def _log_batch_loss(self, losses: dict, step: int):
-        """Log multiple loss values to tensorboard.
+            # Print validation summary
+            if (epoch == 0) or (epoch % VALIDATION_SUMMARY_PERIOD == 0):
+                loss_print = (
+                    f"=> Validation Loss (Epoch {epoch}) | "
+                    f"Avg loss: {VAL_LOSS_TRACKER.epoch_loss()['total']:.4f} | "
+                    f"1_1: {VAL_LOSS_TRACKER.epoch_loss()['1_1']:.4f} | "
+                    f"1_2: {VAL_LOSS_TRACKER.epoch_loss()['1_2']:.4f} | "
+                    f"1_4: {VAL_LOSS_TRACKER.epoch_loss()['1_4']:.4f} | "
+                    f"1_8: {VAL_LOSS_TRACKER.epoch_loss()['1_8']:.4f}"
+                )
+                self.logger.info(loss_print)
+                self.logger.info("=> --------------------------")
 
-        Args:
-            losses: Dictionary of losses with format {'loss_name': loss_value}
-            step: Global step for tensorboard logging
-        """
-        for loss_name, loss_value in losses.items():
-            self.TRAIN_LOGGER.add_scalar(
-                f'Batch Loss/{loss_name}',
-                loss_value.item() if torch.is_tensor(loss_value) else loss_value,
-                step
-            )
-
-    def get_best_record(self):
-        return {
-            'best_loss': self.best_loss,
-            'checkpoint_dir': self.log_dir
-        }
-
-    def _save_checkpoint(self, epoch, loss):
+    def _save_checkpoint(self, epoch, loss, ckpt_name: str):
         """Save model checkpoint when best loss is achieved"""
 
         checkpoint = {
@@ -214,6 +220,11 @@ class LMSCNetTrainer:
             'config': self.CFG
         }
 
-        checkpoint_path = os.path.join(
-            self.log_dir, f'best_model_{self.time}.pth')
+        checkpoint_path = os.path.join(self.log_dir, f'{ckpt_name}.pth')
         torch.save(checkpoint, checkpoint_path)
+
+    def get_best_record(self):
+        return {
+            'best_loss': self.best_loss,
+            'checkpoint_dir': self.log_dir
+        }

@@ -1,3 +1,10 @@
+"""
+Author: Ikhyeon Cho
+Link: https://github.com/Ikhyeon-Cho
+File: nn_modules.py
+Date: 2024/11/13 18:50
+"""
+
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
@@ -143,3 +150,5 @@ class SegmentationHead3d(nn.Module):
         seg_completion_3d = self.voxel_classifier(completion_3d)
 
         return seg_completion_3d
+
+
